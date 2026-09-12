@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spend Analyser</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f7fb;color:#172033}
+.wrap{max-width:1100px;margin:auto;padding:18px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap}
+.brand{font-size:28px;font-weight:800}.muted{color:#667085}.upload{margin-top:18px;background:white;border:2px dashed #cbd3df;border-radius:16px;padding:30px;text-align:center}.upload.drag{border-style:solid}
+.btn{display:inline-block;border:0;border-radius:10px;padding:11px 16px;background:#172033;color:white;font-weight:700;cursor:pointer}.btn.secondary{background:white;color:#172033;border:1px solid #d8dee9}input[type=file]{display:none}
+.alert{margin:14px 0;padding:13px 15px;border-radius:12px;background:#eef4ff;border:1px solid #d5e2ff}.success{background:#eefbf3;border-color:#ccebd7}.warn{background:#fff8e8;border-color:#f3dfaa}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.card{background:white;border:1px solid #e4e8f0;border-radius:14px;padding:16px;box-shadow:0 2px 8px #00000008}.label{font-size:13px;color:#667085}.big{font-size:24px;font-weight:800;margin-top:4px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.section{margin-top:14px}.months{display:flex;gap:8px;flex-wrap:wrap}.month{padding:9px 13px;border:1px solid #d8dee9;border-radius:999px;background:white;cursor:pointer}.month.active{background:#172033;color:white}
+.barrow{display:grid;grid-template-columns:150px 1fr 105px;gap:8px;align-items:center;margin:9px 0}.bar{height:10px;background:#e7ebf2;border-radius:10px;overflow:hidden}.bar i{display:block;height:100%;background:#172033}
+.search{width:100%;padding:12px;border:1px solid #d8dee9;border-radius:10px;margin:10px 0}.tablewrap{overflow:auto;background:white;border:1px solid #e4e8f0;border-radius:14px}.tx{width:100%;border-collapse:collapse;min-width:730px}.tx th,.tx td{padding:11px 13px;border-bottom:1px solid #edf0f5;text-align:left}.tx th{font-size:13px;color:#667085}.amount{text-align:right!important}
+.modal{display:none;position:fixed;inset:0;background:#0008;align-items:center;justify-content:center;padding:18px}.modalbox{max-width:560px;width:100%;background:white;border-radius:16px;padding:22px}.candidate{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:15px 0}.namebox{border:1px solid #e1e5ed;border-radius:12px;padding:15px;font-weight:700}.actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px;flex-wrap:wrap}
+@media(max-width:800px){.cards{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.barrow{grid-template-columns:120px 1fr 90px}}
+</style>
+
+<style id="hide-import-status">#status{display:none!important}</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top">
+  <div><div class="brand">Spend Analyser</div><div class="muted">GPay spending analyser</div></div>
+  <button type="button" class="btn" id="learnedMerchantsBtn"
+    style="font-size:15px;padding:12px 18px;white-space:nowrap">
+    📚 Learned Merchants
+  </button>
+</div>
+
+<div id="drop" class="upload">
+  <h2>Import your GPay statement</h2>
+  <p class="muted">Choose your GPay statement. It is read in this browser and is not uploaded by this page.</p>
+  <label class="btn">Choose GPay statement <input id="pdfFile" type="file" accept="application/pdf,.pdf"></label>
+  <div style="margin-top:12px"><small>Your spending dashboard will appear after the statement is read.</small></div>
+</div>
+
+<div id="status" class="alert" style="display:none!important"></div>
+<div class="cards" id="cards"></div>
+
+<div class="card section"><h2>Monthly spending</h2><div id="months" class="months"></div><div id="chart" style="margin-top:15px"></div></div>
+<div class="grid section">
+  <div class="card"><h2>Top people / merchants</h2><div id="top"></div></div>
+  <div class="card"><h2>Spending by category</h2>
+    <div id="categoryEmpty" class="muted">Select a month above to see category spending.</div>
+    <div id="categoryChart" style="display:none"></div>
+  </div>
+</div>
+<div class="card section" id="pendingSection" style="display:none">
+  <h2>Pending category checks</h2>
+  <p class="muted">You chose <b>Later</b> for these transactions that still need a category. Finish your dashboard review first, then come here to classify them one by one.</p>
+  <button class="btn" id="reviewPendingBtn">Review pending checks</button>
+  <div id="pendingList" style="margin-top:12px"></div>
+</div>
+
+<div class="section">
+  <h2 id="monthTitle">Transactions</h2>
+  <input class="search" id="search" placeholder="Search name, merchant or transaction ID...">
+  <div class="tablewrap"><table class="tx"><thead><tr><th>Date</th><th>Time</th><th>Person / merchant</th><th>Direction</th><th class="amount">Amount</th></tr></thead><tbody id="tbody"></tbody></table></div>
+</div>
+</div>
+
+
+<div id="pendingCorner" style="display:none;position:fixed;right:16px;bottom:16px;z-index:20">
+  <button id="pendingBtn" class="btn" style="box-shadow:0 6px 20px #0003">
+    <span id="pendingCount">0</span> pending category checks
+  </button>
+</div>
+<div class="modal" id="categoryDetailModal"><div class="modalbox">
+  <h2 id="categoryDetailTitle">Category</h2>
+  <div id="categoryDetailBody"></div>
+  <div class="actions"><button class="btn secondary" id="closeCategoryDetail">Close</button></div>
+</div></div>
+<div class="modal" id="modal"><div class="modalbox">
+<h2>What is this transaction related to?</h2><p class="muted">SpendLens wants you to classify this transaction. You can decide now or review it later.</p>
+<div id="matchContent"></div><div class="actions"><button type="button" class="btn secondary" id="closeCategoryReviewBtn">Close</button><button class="btn secondary" id="laterBtn">Later</button><button class="btn" id="saveCategoryBtn">Save category</button></div>
+</div></div>
+
+<script src="merchant-master.js"></script>
+<script type="module">
+import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
+pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+
+let DATA=[], selectedMonth="all", currentPair=null;
+const categoryKey="spendlens_tx_categories_v8";
+const pendingKey="spendlens_category_pending_v8";
+let categories=JSON.parse(localStorage.getItem(categoryKey)||"{}");
+let pending=JSON.parse(localStorage.getItem(pendingKey)||"[]");
+const $=id=>document.getElementById(id);
+const money=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const norm=s=>(s||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
+const canonical=name=>name;
+const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+
+function showError(msg){
+  $("status").className="alert warn";
+  $("status").innerHTML=""; $("status").style.display="none";
+}
+function updatePendingCorner(){
+  const n=pending.length;
+  $("pendingCount").textContent=n;
+  $("pendingCorner").style.display=n?"block":"none";
+  $("pendingSection").style.display=n?"block":"none";
+  $("pendingList").innerHTML=n ? pending.map((key,i)=>{
+    const x=DATA.find(t=>txKey(t)===key);
+    return x ? `<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #edf0f5"><span><b>${escapeHtml(x.name)}</b> — ${money(x.amount)}</span><button class="btn secondary pendingItem" data-index="${i}">Review</button></div>` : "";
+  }).join("") : "";
+  document.querySelectorAll(".pendingItem").forEach(btn=>btn.onclick=()=>{
+    const x=DATA.find(t=>txKey(t)===pending[Number(btn.dataset.index)]);
+    if(x){ currentPair=[x]; showPair(); }
+  });
+}
+
+$("pdfFile").addEventListener("change",e=>{
+  const file=e.target.files && e.target.files[0];
+  if(!file) return;
+  if(file.type!=="application/pdf" && !file.name.toLowerCase().endsWith(".pdf")){
+    showError("Please choose a PDF file.");
+    e.target.value="";
+    return;
+  }
+  importPDF(file).finally(()=>{ e.target.value=""; });
+});
+$("drop").addEventListener("dragover",e=>{e.preventDefault();$("drop").classList.add("drag")});
+$("drop").addEventListener("dragleave",()=> $("drop").classList.remove("drag"));
+$("drop").addEventListener("drop",e=>{e.preventDefault();$("drop").classList.remove("drag");const f=e.dataTransfer.files[0];if(f && f.type==="application/pdf")importPDF(f);else showError("Please choose a PDF file.")});
+
+async function importPDF(file){
+  $("status").className="alert"; $("status").textContent="Reading PDF locally…";
+  DATA=[]; render();
+  try{
+    if(file.type!=="application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) throw new Error("Only PDF files are accepted.");
+    const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer(),useWorkerFetch:true,isEvalSupported:true}).promise;
+    let found=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      $("status").innerHTML=""; $("status").style.display="none";
+      const page=await pdf.getPage(p);
+      const tc=await page.getTextContent({normalizeWhitespace:false,disableCombineTextItems:false});
+      const lines=makeLines(tc.items);
+      found.push(...parsePage(lines));
+    }
+    // Remove duplicate transaction IDs if PDF extraction repeats an item.
+    const seen=new Set(); found=found.filter(x=>x.tid ? !seen.has(x.tid) && seen.add(x.tid) : true);
+    found=found.filter(x=>Number.isFinite(x.amount) && x.amount>0 && x.name && x.date);
+    if(!found.length) throw new Error("The PDF was readable, but valid GPay transaction fields could not be extracted.");
+    DATA=found;
+    // Auto-categorize using merchant keyword rules. Unknown remains available
+    // for manual review, and existing manual decisions always win.
+    DATA.forEach(x=>{
+      const key=txKey(x);
+      if(!categories[key]){
+        const learned=learnedCategoryFor(x);
+        const suggestion=learned || categorySuggestion(x);
+        if(suggestion!=="Unknown") categories[key]=suggestion;
+      }
+    });
+    saveCategoryState();
+    selectedMonth="all";
+    const sent=found.filter(x=>x.direction==="sent").reduce((a,x)=>a+x.amount,0);
+    const received=found.filter(x=>x.direction==="received").reduce((a,x)=>a+x.amount,0);
+    render();
+    updatePendingCorner();
+    setTimeout(()=>{ try{ findPair(); }catch(e){ console.warn("Category review skipped:",e); } },150);
+  }catch(err){
+    DATA=[];
+    selectedMonth="all";
+    render();
+    updatePendingCorner();
+    $("status").className="alert warn";
+    $("status").innerHTML=""; $("status").style.display="none";
+  }
+}
+
+/* PDF text items sometimes arrive as separate positioned fragments.
+   Reconstruct visual lines using their Y coordinates before parsing. */
+function makeLines(items){
+  const arr=items.map(x=>({text:(x.str||"").trim(),x:x.transform?.[4]||0,y:x.transform?.[5]||0})).filter(x=>x.text);
+  arr.sort((a,b)=>Math.abs(b.y-a.y)>2 ? b.y-a.y : a.x-b.x);
+  const lines=[];
+  for(const item of arr){
+    let line=lines.find(l=>Math.abs(l.y-item.y)<=2);
+    if(!line){line={y:item.y,items:[]};lines.push(line)}
+    line.items.push(item);
+  }
+  lines.sort((a,b)=>b.y-a.y);
+  return lines.map(l=>l.items.sort((a,b)=>a.x-b.x).map(x=>x.text).join(" ").replace(/\s+/g," ").trim()).filter(Boolean);
+}
+
+function parsePage(lines){
+  const out=[];
+  const dateRe=/^(\d{1,2})\s+([A-Za-z]{3}),\s*(\d{4})\s+(.*)$/;
+  const txRe=/\b(Paid\s+to|Received\s+from|Self\s+transfer\s+to)\s+(.+?)(?=\s+₹\s*[\d,]+(?:\.\d+)?\s*$)/i;
+  const amountRe=/₹\s*([\d,]+(?:\.\d+)?)\s*$/;
+  const timeRe=/^(\d{1,2}:\d{2}\s*[AP]M)\b/i;
+  const idRe=/UPI\s*Transaction\s*ID\s*:\s*(\d+)/i;
+
+  // In the actual GPay PDF, every transaction's first visual row contains:
+  // DATE + Paid/Received + NAME + ₹AMOUNT. The time/UPI ID/bank are on
+  // following visual rows. Therefore each transaction must be keyed from
+  // that first row; never group an entire date's transactions together.
+  for(let i=0;i<lines.length;i++){
+    const line=String(lines[i]||'').replace(/\s+/g,' ').trim();
+    const dm=line.match(dateRe);
+    if(!dm) continue;
+    const rest=dm[4];
+    const tm=rest.match(txRe);
+    const am=rest.match(amountRe);
+    if(!tm || !am) continue;
+
+    const type=tm[1].replace(/\s+/g,' ').toLowerCase();
+    const name=tm[2].trim();
+    const amount=Number(am[1].replace(/,/g,''));
+    if(!name || !Number.isFinite(amount) || amount<=0) continue;
+
+    let time='',tid='',bank='';
+    for(let j=i+1;j<Math.min(i+5,lines.length);j++){
+      const n=String(lines[j]||'').replace(/\s+/g,' ').trim();
+      if(!n) continue;
+      // The next transaction header marks the end of this transaction.
+      const next=n.match(dateRe);
+      if(next && next[4].match(txRe) && next[4].match(amountRe)) break;
+      if(!time){ const m=n.match(timeRe); if(m) time=m[1].replace(/\s+/g,' ').trim(); }
+      if(!tid){ const m=n.match(idRe); if(m) tid=m[1]; }
+      if(!bank){ const m=n.match(/^Paid\s+by\s+(.+)$/i); if(m) bank=m[1].trim(); }
+    }
+
+    out.push({
+      date:`${dm[1]} ${dm[2]}, ${dm[3]}`,
+      time,
+      name,
+      tid,
+      bank,
+      amount,
+      direction:type.startsWith('received')?'received':type.startsWith('self')?'self':'sent'
+    });
+  }
+  return out;
+}
+
+function dateObj(s){return new Date(s.replace(/(\d{1,2})\s*([A-Za-z]{3})\s*,\s*(\d{4})/,"$2 $1, $3"))}
+function monthKey(s){const d=dateObj(s);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")}
+function monthLabel(k){const [y,m]=k.split("-");return new Date(+y,+m-1,1).toLocaleString("en-IN",{month:"short",year:"numeric"})}
+
+
+function txKey(x){
+  return x.tid || [x.date,x.time,x.name,x.amount].join("|");
+}
+function suggestedCategory(x){
+  const n=norm(x.name);
+  if(/swiggy|zomato|restaurant|hotel|cafe|coffee|food|pizza|domino|kfc|mcdonald|burger|bakery|biryani|dining/.test(n)) return "Food";
+  if(/grocery|supermarket|dmart|reliance fresh|bigbasket|blinkit|zepto|instamart|milk|vegetable|fruit|provision|ration/.test(n)) return "Essential";
+  if(/uber|ola|rapido|metro|bus|rail|irctc|petrol|fuel|parking|toll|transport|cab|flight|airline/.test(n)) return "Essential";
+  if(/amazon|flipkart|myntra|ajio|meesho|shopping|store|retail/.test(n)) return "Essential";
+  if(/movie|cinema|netflix|prime video|hotstar|spotify|bookmyshow|game|gaming|entertainment/.test(n)) return "Entertainment";
+  if(/savings|investment|mutual fund|sip|recurring deposit|fixed deposit|zerodha|groww|kuvera|coin|paytm money/.test(n)) return "Savings";
+  return "Unknown";
+}
+function categoryFor(x){
+  const key=txKey(x);
+  return categories[key] || "Unknown";
+}
+
+const MERCHANT_RULES_KEY="spendAnalyserMerchantRules_v1";
+
+function loadMerchantRules(){
+  try{
+    const v=JSON.parse(localStorage.getItem(MERCHANT_RULES_KEY)||"{}");
+    return v && typeof v==="object" ? v : {};
+  }catch(e){ return {}; }
+}
+let merchantRules=loadMerchantRules();
+
+function merchantLearningKey(name){
+  return norm(String(name||""))
+    .replace(/[^a-z0-9]+/g," ")
+    .trim();
+}
+
+function saveMerchantRules(){
+  try{ localStorage.setItem(MERCHANT_RULES_KEY, JSON.stringify(merchantRules)); }
+  catch(e){}
+}
+
+function learnedCategoryFor(x){
+  const key=merchantLearningKey(x.name);
+  return key && merchantRules[key] ? merchantRules[key] : null;
+}
+
+function rememberMerchantCategory(x, category){
+  const key=merchantLearningKey(x.name);
+  if(!key || !category || category==="Unknown") return;
+  merchantRules[key]=category;
+  saveMerchantRules();
+}
+
+function merchantMasterNormalize(value){
+  return norm(String(value||"")).replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+}
+
+function categorySuggestion(x){
+  const learned=learnedCategoryFor(x);
+  if(learned) return learned;
+  const n=merchantMasterNormalize(`${x.name||""} ${x.bank||""}`);
+
+  for(const [canonical,aliases] of Object.entries(MERCHANT_ALIASES||{})){
+    if(aliases.some(a=>{
+      const aa=merchantMasterNormalize(a);
+      return aa && (n===aa || n.includes(aa));
+    })){
+      for(const [category,items] of Object.entries(MERCHANT_MASTER||{})){
+        if(items.some(v=>merchantMasterNormalize(v)===merchantMasterNormalize(canonical))) return category;
+      }
+    }
+  }
+
+  for(const category of ["Medical","Food","Groceries","Savings","Entertainment","Essential"]){
+    if((MERCHANT_MASTER[category]||[]).some(v=>{
+      const term=merchantMasterNormalize(v);
+      return term && n.includes(term);
+    })) return category;
+  }
+  return "Unknown";
+}
+function saveCategoryState(){
+  localStorage.setItem(categoryKey,JSON.stringify(categories));
+  localStorage.setItem(pendingKey,JSON.stringify(pending));
+  updatePendingCorner();
+}
+function addPendingTx(x){
+  const key=txKey(x);
+  if(!pending.includes(key)) pending.push(key);
+}
+function removePendingTx(x){ const key=txKey(x); pending=pending.filter(k=>k!==key); }
+function findUnknown(){
+  return DATA.find(x=>x.direction==="sent" && !categories[txKey(x)]) || null;
+}
+function findPair(){ updatePendingCorner(); const x=findUnknown(); if(x){ currentPair=[x]; showPair(); } }
+function showPair(){
+  const x=currentPair?.[0]; if(!x)return;
+  const suggested=categorySuggestion(x);
+  $("matchContent").innerHTML=
+    `<div class="candidate" style="grid-template-columns:1fr">
+       <div class="namebox"><div style="font-size:13px;color:#667085">Merchant / person</div>${escapeHtml(x.name)}</div>
+       <div class="namebox"><div style="font-size:13px;color:#667085">Amount</div>${money(x.amount)}</div>
+       <div class="namebox"><div style="font-size:13px;color:#667085">Date</div>${escapeHtml(x.date)} ${escapeHtml(x.time)}</div>
+     </div>
+     <label><b>What is this transaction related to?</b></label>
+     <select id="categorySelect" style="margin-top:10px;padding:10px;width:100%">
+       ${["Food","Essential","Groceries","Medical","Savings","Entertainment","Unknown"].map(c=>`<option ${c===suggested?"selected":""}>${c}</option>`).join("")}
+     </select>`;
+  $("modal").style.display="flex";
+}
+$("closeCategoryReviewBtn").onclick=()=>{$("modal").style.display="none";currentPair=null};
+$("modal").addEventListener("click",e=>{if(e.target===$("modal")){$("modal").style.display="none";currentPair=null}});
+$("saveCategoryBtn").onclick=()=>{
+  const x=currentPair?.[0]; if(!x)return;
+  categories[txKey(x)]=$("categorySelect").value;
+  removePendingTx(x);
+  saveCategoryState();
+  $("modal").style.display="none"; currentPair=null; render();
+};
+$("laterBtn").onclick=()=>{
+  const x=currentPair?.[0]; if(!x)return;
+  addPendingTx(x);
+  saveCategoryState();
+  $("modal").style.display="none"; currentPair=null; render();
+};
+window.showCategoryDetail=function(encodedName,value,month){
+  const name=decodeURIComponent(encodedName);
+  const rows=DATA.filter(x=>monthKey(x.date)===month && x.direction==="sent" && categoryFor(x)===name);
+  const total=rows.reduce((a,x)=>a+x.amount,0);
+  $("categoryDetailTitle").textContent=name;
+  $("categoryDetailBody").innerHTML=
+    `<div class="card" style="box-shadow:none;margin:0 0 12px 0">
+      <div class="label">${escapeHtml(monthLabel(month))}</div>
+      <div class="big">${money(total)}</div>
+      <div class="muted">${rows.length} transaction${rows.length===1?"":"s"}</div>
+    </div>
+    <h3>Transactions in ${escapeHtml(name)}</h3>
+    <div style="max-height:330px;overflow:auto">
+      ${rows.sort((a,b)=>dateObj(b.date)-dateObj(a.date)).map(x=>
+        `<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #edf0f5">
+          <span><b>${escapeHtml(canonical(x.name))}</b><br><small class="muted">${escapeHtml(x.date)} · ${escapeHtml(x.time)}</small></span>
+          <b>${money(x.amount)}</b>
+        </div>`).join("") || '<div class="muted">No transactions.</div>'}
+    </div>`;
+  $("categoryDetailModal").style.display="flex";
+};
+$("closeCategoryDetail").onclick=()=>{$("categoryDetailModal").style.display="none"};
+function renderCategoryChart(rows){
+  const box=$("categoryChart"), empty=$("categoryEmpty");
+  const sent=rows.filter(x=>x.direction==="sent");
+  const cats=["Food","Essential","Groceries","Medical","Savings","Entertainment","Unknown"];
+  const sums={}; cats.forEach(c=>sums[c]=0);
+  sent.forEach(x=>sums[categoryFor(x)]+=x.amount);
+
+  const total=sent.reduce((a,x)=>a+x.amount,0);
+  if(selectedMonth==="all" || !total){
+    box.style.display="none";
+    empty.style.display="block";
+    empty.textContent="Select a month to see spending by category.";
+    return;
+  }
+
+  box.style.display="block";
+  empty.style.display="none";
+
+  const items=cats.filter(c=>sums[c]>0);
+  const cx=150,cy=150,r=105;
+  let angle=-Math.PI/2;
+  const slices=items.map((name,idx)=>{
+    const val=sums[name];
+    const da=val/total*Math.PI*2;
+    const x1=cx+r*Math.cos(angle), y1=cy+r*Math.sin(angle);
+    const x2=cx+r*Math.cos(angle+da), y2=cy+r*Math.sin(angle+da);
+    const large=da>Math.PI?1:0;
+    const d=`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    const result={name,val,d,idx};
+    angle+=da;
+    return result;
+  });
+
+  box.innerHTML=`
+    <div class="category-wrap">
+      <div class="pie">
+        <svg viewBox="0 0 300 300" role="img" aria-label="Spending by category">
+          ${slices.map(z=>`<path d="${z.d}" fill="hsl(${(z.idx*67)%360} 65% 55%)"
+             stroke="white" stroke-width="2" style="cursor:pointer"
+             onclick="openCategoryTransactions('${encodeURIComponent(z.name)}')">
+             <title>${escapeHtml(z.name)} — ${money(z.val)}. Click to review transactions.</title>
+          </path>`).join("")}
+        </svg>
+      </div>
+      <div class="legend">
+        ${items.map((name,i)=>`
+          <button class="legend-item" type="button" onclick="openCategoryTransactions('${encodeURIComponent(name)}')">
+            <span class="dot" style="background:hsl(${(slices[i].idx*67)%360} 65% 55%)"></span>
+            <span>${escapeHtml(name)}</span>
+            <b>${money(sums[name])}</b>
+          </button>`).join("")}
+      </div>
+    </div>`;
+
+  if(!document.getElementById("categoryTxModal")){
+    const modal=document.createElement("div");
+    modal.className="modal";
+    modal.id="categoryTxModal";
+    modal.innerHTML=`<div class="modalbox" style="max-width:720px;position:relative">
+      <button type="button" id="closeCategoryTxX" aria-label="Close" title="Close"
+        style="position:absolute;right:12px;top:10px;border:0;background:transparent;font-size:30px;line-height:1;cursor:pointer;padding:5px 9px">×</button>
+      <h2 id="categoryTxTitle" style="padding-right:42px"></h2><div id="categoryTxHint" class="muted" style="margin-bottom:12px"></div>
+      <div id="categoryTxBody"></div>
+      <div class="actions">
+        <button type="button" class="btn secondary" id="closeCategoryTx">Close</button>
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+    document.getElementById("closeCategoryTx").onclick=()=>modal.style.display="none";
+    document.getElementById("closeCategoryTxX").onclick=()=>modal.style.display="none";
+    modal.addEventListener("click",e=>{if(e.target===modal) modal.style.display="none"});
+  }
+}
+
+window.openCategoryTransactions=function(encodedName){
+  const category=decodeURIComponent(encodedName);
+  if($("categoryTxHint")) $("categoryTxHint").textContent =
+    category==="Unknown" ? "These transactions could not be confidently categorized automatically. Choose a category below, or close this popup and review later. Your saved merchant category will be remembered for future uploads." : "";
+  const rows=DATA.filter(x=>x.direction==="sent" &&
+    monthKey(x.date)===selectedMonth &&
+    categoryFor(x)===category);
+
+  const modal=$("categoryTxModal");
+  $("categoryTxTitle").textContent=`${category} — ${monthLabel(selectedMonth)}`;
+
+  if(category==="Unknown"){
+    $("categoryTxBody").innerHTML=rows.length ? rows.map((x,i)=>`
+      <div style="border-bottom:1px solid #edf0f5;padding:12px 0">
+        <div style="display:flex;justify-content:space-between;gap:12px">
+          <div>
+            <b>${escapeHtml(x.name)}</b><br>
+            <small class="muted">${escapeHtml(x.date)} · ${escapeHtml(x.time||"—")}</small>
+          </div>
+          <b>${money(x.amount)}</b>
+        </div>
+        <label style="display:block;margin-top:9px;font-size:13px">What is this transaction related to?</label>
+        <select class="unknown-category-select" data-key="${encodeURIComponent(txKey(x))}"
+          style="margin-top:6px;padding:9px;width:100%">
+          ${["Food","Essential","Groceries","Medical","Savings","Entertainment","Unknown"].map(c=>
+            `<option value="${c}" ${c==="Unknown"?"selected":""}>${c}</option>`).join("")}
+        </select>
+      </div>`).join("") :
+      `<div class="muted">There are no Unknown transactions for this month.</div>`;
+
+    $("categoryTxBody").insertAdjacentHTML("beforeend", rows.length ? `
+      <div class="actions">
+        <button class="btn" id="saveUnknownCategories">Save classifications</button>
+      </div>` : "");
+
+    const save=$("saveUnknownCategories");
+    if(save){
+      save.onclick=()=>{
+        document.querySelectorAll(".unknown-category-select").forEach(sel=>{
+          const key=decodeURIComponent(sel.dataset.key);
+          if(sel.value==="Unknown") {
+            delete categories[key];
+          } else {
+            categories[key]=sel.value;
+            const tx=DATA.find(x=>txKey(x)===key);
+            if(tx) rememberMerchantCategory(tx, sel.value);
+          }
+        });
+        saveCategoryState();
+        modal.style.display="none";
+        render();
+      };
+    }
+  }else{
+    const total=rows.reduce((a,x)=>a+x.amount,0);
+    $("categoryTxBody").innerHTML=`
+      <div class="card" style="box-shadow:none;margin:0 0 12px">
+        <div class="label">${rows.length} transactions</div>
+        <div class="big">${money(total)}</div>
+      </div>
+      <div style="max-height:360px;overflow:auto">
+        ${rows.map(x=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #edf0f5">
+          <span><b>${escapeHtml(x.name)}</b><br><small class="muted">${escapeHtml(x.date)} · ${escapeHtml(x.time||"—")}</small></span>
+          <b>${money(x.amount)}</b>
+        </div>`).join("")}
+      </div>`;
+  }
+  modal.style.display="flex";
+};
+
+function arrangeDashboardSections(){
+  const cat=$("categoryChart");
+  const top=$("top");
+  if(!cat || !top) return;
+  const catParent=cat.parentElement;
+  const topParent=top.parentElement;
+  if(catParent && topParent && catParent!==topParent){
+    topParent.parentNode.insertBefore(catParent, topParent);
+  }else if(catParent && topParent && catParent===topParent){
+    topParent.insertBefore(catParent, top);
+  }
+}
+function render(){
+  const sent=DATA.filter(x=>x.direction==="sent").reduce((a,x)=>a+x.amount,0);
+  const rec=DATA.filter(x=>x.direction==="received").reduce((a,x)=>a+x.amount,0);
+  const self=DATA.filter(x=>x.direction==="self").reduce((a,x)=>a+x.amount,0);
+  $("cards").innerHTML=[
+  ["Transactions",DATA.length,'showAllTransactions()'],
+  ["Total sent",money(sent),null],
+  ["Total received",money(rec),null],
+  ["Self transfers",money(self),null]
+].map(x=>`<div class="card" ${x[2]?`onclick="${x[2]}" style="cursor:pointer"`:""}><div class="label">${x[0]}${x[2]?' <span style="font-size:11px">▸</span>':''}</div><div class="big">${x[1]}</div></div>`).join("");
+  if(!DATA.length){$("months").innerHTML="";$("chart").innerHTML="";$("top").innerHTML="";$("categoryChart").innerHTML="";$("categoryChart").style.display="none";$("categoryEmpty").style.display="block";$("tbody").innerHTML="";return}
+  const months=[...new Set(DATA.map(x=>monthKey(x.date)))].sort();
+  $("months").innerHTML=`<button class="month ${selectedMonth==="all"?"active":""}" onclick="selectMonth('all')">All</button>`+months.map(k=>`<button class="month ${selectedMonth===k?"active":""}" onclick="selectMonth('${k}')">${monthLabel(k)}</button>`).join("");
+  const byMonth={};DATA.filter(x=>x.direction==="sent").forEach(x=>byMonth[monthKey(x.date)]=(byMonth[monthKey(x.date)]||0)+x.amount);
+  const max=Math.max(...Object.values(byMonth),1);
+  $("chart").innerHTML=months.map(k=>`<div class="barrow"><span>${monthLabel(k)}</span><div class="bar"><i style="width:${byMonth[k]/max*100}%"></i></div><b>${money(byMonth[k]||0)}</b></div>`).join("");
+  const filtered=DATA.filter(x=>selectedMonth==="all"||monthKey(x.date)===selectedMonth);
+  if(selectedMonth==="all"){
+    $("top").innerHTML='<div class="muted">Select a month to see merchant spending.</div>';
+  } else {
+    const top={};filtered.filter(x=>x.direction==="sent").forEach(x=>{const n=canonical(x.name);top[n]=(top[n]||0)+x.amount});
+    const tm=Math.max(...Object.values(top),1);
+    $("top").innerHTML=Object.entries(top).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,v])=>`<div class="barrow"><span>${escapeHtml(n)}</span><div class="bar"><i style="width:${v/tm*100}%"></i></div><b>${money(v)}</b></div>`).join("");
+  }
+  renderCategoryChart(filtered);
+  arrangeDashboardSections();
+  $("monthTitle").textContent=selectedMonth==="all"?"Transactions — select a month":`Transactions — ${monthLabel(selectedMonth)}`;renderTx();
+}
+window.selectMonth=k=>{selectedMonth=k;render()};
+$("search").addEventListener("input",renderTx);
+function renderTx(forceAll=false){const q=$("search").value.toLowerCase();const rows=DATA.filter(x=>((forceAll||selectedMonth==="all")||monthKey(x.date)===selectedMonth)&&(!q||`${x.name} ${x.tid} ${x.date}`.toLowerCase().includes(q))).sort((a,b)=>dateObj(b.date)-dateObj(a.date));$("tbody").innerHTML=rows.slice(0,1000).map(x=>`<tr><td>${escapeHtml(x.date)}</td><td>${escapeHtml(x.time||"—")}</td><td>${escapeHtml(canonical(x.name))}</td><td>${escapeHtml(x.direction)}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")}
+
+
+
+// Pending category review controls.
+$("pendingBtn").onclick=()=>{
+  if(!pending.length)return;
+  const x=DATA.find(t=>txKey(t)===pending[0]);
+  if(x){ currentPair=[x]; showPair(); }
+};
+$("reviewPendingBtn").onclick=()=>{
+  if(!pending.length)return;
+  const x=DATA.find(t=>txKey(t)===pending[0]);
+  if(x){ currentPair=[x]; showPair(); }
+};
+updatePendingCorner();
+
+function renderLearnedMerchants(){
+  const body=$("learnedMerchantsBody");
+  if(!body) return;
+
+  const cats=["Food","Medical","Groceries","Essential","Savings","Entertainment","Unknown"];
+  const learned=Object.entries(merchantRules||{}).sort((a,b)=>a[0].localeCompare(b[0]));
+
+  // Build a current-upload view showing every merchant and how it was categorized.
+  const currentMap=new Map();
+  (DATA||[]).forEach(tx=>{
+    const key=merchantLearningKey(tx.name);
+    if(!key) return;
+    const category=categories[txKey(tx)] || categorySuggestion(tx) || "Unknown";
+    if(!currentMap.has(key)){
+      currentMap.set(key,{
+        name:String(tx.name||"").trim() || key,
+        category,
+        count:0,
+        amount:0,
+        learned:!!merchantRules[key]
+      });
+    }
+    const row=currentMap.get(key);
+    row.count++;
+    if(tx.direction==="sent") row.amount += Number(tx.amount||0);
+  });
+
+  const current=[...currentMap.values()].sort((a,b)=>b.amount-a.amount);
+  const rows=learned.map(([merchant,cat])=>{
+    const live=currentMap.get(merchant);
+    return {
+      merchant,
+      display: live ? live.name : merchant,
+      category: cat,
+      count: live ? live.count : 0,
+      amount: live ? live.amount : 0,
+      live: !!live
+    };
+  });
+
+  // Include automatically categorized merchants that have not yet been manually learned.
+  current.forEach(r=>{
+    if(!merchantRules[r.name] && !rows.some(x=>x.merchant===merchantLearningKey(r.name))){
+      rows.push({
+        merchant:merchantLearningKey(r.name),
+        display:r.name,
+        category:r.category,
+        count:r.count,
+        amount:r.amount,
+        live:true,
+        auto:true
+      });
+    }
+  });
+
+  rows.sort((a,b)=>{
+    if(a.auto!==b.auto) return a.auto ? 1 : -1;
+    return b.amount-a.amount;
+  });
+
+  body.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0 16px">
+      <div>
+        <b>Merchant categories</b>
+        <div class="muted">Saved categories are remembered for future uploads. Auto categories are shown for the current PDF.</div>
+      </div>
+      <div class="muted">${learned.length} saved</div>
+    </div>
+
+    ${rows.length ? `
+    <div style="max-height:520px;overflow:auto;border-top:1px solid #edf0f5">
+      ${rows.map(r=>`
+        <div class="learned-row" data-merchant="${encodeURIComponent(r.merchant)}"
+             style="display:flex;align-items:center;gap:10px;border-bottom:1px solid #edf0f5;padding:13px 0;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px">
+            <div style="font-weight:600;word-break:break-word">${escapeHtml(r.display)}</div>
+            <small class="muted">
+              ${r.auto ? "Automatically categorized" : "Saved merchant rule"}
+              ${r.live ? ` · ${r.count} txn${r.count===1?"":"s"} · ₹${Number(r.amount||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}` : ""}
+            </small>
+          </div>
+
+          <select class="learned-category" style="padding:9px;min-width:145px">
+            ${cats.map(c=>`<option value="${c}" ${c===r.category?"selected":""}>${c}</option>`).join("")}
+          </select>
+
+          <button type="button" class="btn learned-save">${r.auto ? "Save Rule" : "Save"}</button>
+          ${r.auto ? "" : '<button type="button" class="btn secondary learned-delete">Delete</button>'}
+        </div>`).join("")}
+    </div>` : `
+      <div class="muted" style="padding:28px 0;text-align:center">
+        No merchant data yet.<br>
+        Upload a GPay PDF or manually classify an Unknown transaction to build your merchant list.
+      </div>
+    `}
+  `;
+
+  body.querySelectorAll(".learned-row").forEach(row=>{
+    const merchant=decodeURIComponent(row.dataset.merchant);
+    const select=row.querySelector(".learned-category");
+    const displayName=row.querySelector("div[style*='font-weight:600']")?.textContent?.trim() || merchant;
+
+    row.querySelector(".learned-save").onclick=()=>{
+      if(select.value==="Unknown") delete merchantRules[merchant];
+      else merchantRules[merchant]=select.value;
+      saveMerchantRules();
+      renderLearnedMerchants();
+      render();
+    };
+
+    const del=row.querySelector(".learned-delete");
+    if(del){
+      del.onclick=()=>{
+        delete merchantRules[merchant];
+        saveMerchantRules();
+        renderLearnedMerchants();
+        render();
+      };
+    }
+  });
+}
+
+function openLearnedMerchants(){
+  renderLearnedMerchants();
+  $("learnedMerchantsModal").style.display="flex";
+}
+
+if($("learnedMerchantsBtn")){
+  $("learnedMerchantsBtn").onclick=openLearnedMerchants;
+}
+if($("closeLearnedMerchants")){
+  $("closeLearnedMerchants").onclick=()=>{$("learnedMerchantsModal").style.display="none"};
+}
+if($("closeLearnedMerchantsX")){
+  $("closeLearnedMerchantsX").onclick=()=>{$("learnedMerchantsModal").style.display="none"};
+}
+if($("learnedMerchantsModal")){
+  $("learnedMerchantsModal").addEventListener("click",e=>{
+    if(e.target===$("learnedMerchantsModal")) $("learnedMerchantsModal").style.display="none";
+  });
+}
+
+</script>
+
+
+<div id="learnedMerchantsModal" class="modal" style="display:none">
+  <div class="modalbox" style="max-width:820px;position:relative">
+    <button type="button" id="closeLearnedMerchantsX" aria-label="Close" title="Close"
+      style="position:absolute;right:12px;top:10px;border:0;background:transparent;font-size:30px;line-height:1;cursor:pointer;padding:5px 9px">×</button>
+
+    <h2 style="padding-right:42px">Learned Merchants</h2>
+    <p class="muted">
+      This is your saved merchant-category list. Changes here are used automatically
+      for future GPay uploads on this browser.
+    </p>
+
+    <div id="learnedMerchantsBody"></div>
+
+    <div class="actions">
+      <button type="button" class="btn secondary" id="closeLearnedMerchants">Close</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
