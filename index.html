@@ -13,7 +13,7 @@
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.card{background:white;border:1px solid #e4e8f0;border-radius:14px;padding:16px;box-shadow:0 2px 8px #00000008}.label{font-size:13px;color:#667085}.big{font-size:24px;font-weight:800;margin-top:4px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.section{margin-top:14px}.months{display:flex;gap:8px;flex-wrap:wrap}.month{padding:9px 13px;border:1px solid #d8dee9;border-radius:999px;background:white;cursor:pointer}.month.active{background:#172033;color:white}
 .barrow{display:grid;grid-template-columns:150px 1fr 105px;gap:8px;align-items:center;margin:9px 0}.bar{height:10px;background:#e7ebf2;border-radius:10px;overflow:hidden}.bar i{display:block;height:100%;background:#172033}
-.search{width:100%;padding:12px;border:1px solid #d8dee9;border-radius:10px;margin:10px 0}.tablewrap{overflow:auto;background:white;border:1px solid #e4e8f0;border-radius:14px}.tx{width:100%;border-collapse:collapse;min-width:730px}.tx th,.tx td{padding:11px 13px;border-bottom:1px solid #edf0f5;text-align:left}.tx th{font-size:13px;color:#667085}.amount{text-align:right!important}
+.search{width:100%;padding:12px;border:1px solid #d8dee9;border-radius:10px;margin:10px 0}.tablewrap{overflow:auto;background:white;border:1px solid #e4e8f0;border-radius:14px}.tx{width:100%;border-collapse:collapse;min-width:860px}.tx th,.tx td{padding:11px 13px;border-bottom:1px solid #edf0f5;text-align:left}.tx th{font-size:13px;color:#667085;cursor:pointer;user-select:none;white-space:nowrap}.tx th .sortmark{font-size:11px;margin-left:4px}.tx .filterrow th{cursor:default;background:#fafbfc;position:sticky;top:0;z-index:1}.tx .filterrow input,.tx .filterrow select{width:100%;padding:7px 8px;border:1px solid #d8dee9;border-radius:8px;background:white;font-size:12px}.amount{text-align:right!important}.tx-toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0}.filter-help{font-size:12px;color:#667085}
 .modal{display:none;position:fixed;inset:0;background:#0008;align-items:center;justify-content:center;padding:18px}.modalbox{max-width:560px;width:100%;background:white;border-radius:16px;padding:22px}.candidate{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:15px 0}.namebox{border:1px solid #e1e5ed;border-radius:12px;padding:15px;font-weight:700}.actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px;flex-wrap:wrap}
 @media(max-width:800px){.cards{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.barrow{grid-template-columns:120px 1fr 90px}}
 </style>
@@ -57,8 +57,21 @@
 
 <div class="section">
   <h2 id="monthTitle">Transactions</h2>
-  <input class="search" id="search" placeholder="Search name, merchant or transaction ID...">
-  <div class="tablewrap"><table class="tx"><thead><tr><th>Date</th><th>Time</th><th>Person / merchant</th><th>Direction</th><th class="amount">Amount</th></tr></thead><tbody id="tbody"></tbody></table></div>
+  <div class="tx-toolbar"><span class="filter-help">Tap a column heading to sort. Use the boxes below to filter each column.</span><button type="button" class="btn secondary" id="clearTxFilters">Clear filters</button></div>
+  <input class="search" id="search" placeholder="Search all transactions...">
+  <div class="tablewrap"><table class="tx"><thead><tr id="txHeader">
+    <th data-sort="date">Date <span class="sortmark"></span></th>
+    <th data-sort="time">Time <span class="sortmark"></span></th>
+    <th data-sort="name">Person / merchant <span class="sortmark"></span></th>
+    <th data-sort="direction">Direction <span class="sortmark"></span></th>
+    <th data-sort="amount" class="amount">Amount <span class="sortmark"></span></th>
+  </tr><tr class="filterrow">
+    <th><input id="filterDate" placeholder="Date"></th>
+    <th><input id="filterTime" placeholder="Time"></th>
+    <th><input id="filterName" placeholder="Merchant"></th>
+    <th><select id="filterDirection"><option value="">All</option><option>sent</option><option>received</option><option>self</option></select></th>
+    <th><select id="filterAmount"><option value="">All amounts</option><option value="1-100">₹1–100</option><option value="100-200">₹100–200</option><option value="200-500">₹200–500</option><option value="500-1000">₹500–1,000</option><option value="1000-2000">₹1,000–2,000</option><option value="2000-5000">₹2,000–5,000</option><option value="5000-10000">₹5,000–10,000</option><option value="10000+">₹10,000+</option></select></th>
+  </tr></thead><tbody id="tbody"></tbody></table></div>
 </div>
 </div>
 
@@ -262,38 +275,49 @@ function categoryFor(x){
   return categories[key] || "Unknown";
 }
 
-const MERCHANT_RULES_KEY="spendAnalyserMerchantRules_v1";
+const MERCHANT_RULES_KEY="spendAnalyserMerchantRules_v2";
+const MERCHANT_ALIASES_KEY="spendAnalyserMerchantAliases_v2";
 
 function loadMerchantRules(){
-  try{
-    const v=JSON.parse(localStorage.getItem(MERCHANT_RULES_KEY)||"{}");
-    return v && typeof v==="object" ? v : {};
-  }catch(e){ return {}; }
+  try{ const v=JSON.parse(localStorage.getItem(MERCHANT_RULES_KEY)||"{}"); return v&&typeof v==="object"?v:{}; }
+  catch(e){ return {}; }
+}
+function loadMerchantAliases(){
+  try{ const v=JSON.parse(localStorage.getItem(MERCHANT_ALIASES_KEY)||"{}"); return v&&typeof v==="object"?v:{}; }
+  catch(e){ return {}; }
 }
 let merchantRules=loadMerchantRules();
+let merchantAliases=loadMerchantAliases();
 
 function merchantLearningKey(name){
-  return norm(String(name||""))
-    .replace(/[^a-z0-9]+/g," ")
-    .trim();
+  return norm(String(name||"")).replace(/[^a-z0-9]+/g," ").trim();
 }
-
 function saveMerchantRules(){
-  try{ localStorage.setItem(MERCHANT_RULES_KEY, JSON.stringify(merchantRules)); }
-  catch(e){}
+  localStorage.setItem(MERCHANT_RULES_KEY,JSON.stringify(merchantRules));
+  localStorage.setItem(MERCHANT_ALIASES_KEY,JSON.stringify(merchantAliases));
 }
-
 function learnedCategoryFor(x){
   const key=merchantLearningKey(x.name);
-  return key && merchantRules[key] ? merchantRules[key] : null;
+  if(key && merchantRules[key]) return merchantRules[key];
+  for(const [canonical,aliases] of Object.entries(merchantAliases)){
+    if((aliases||[]).some(a=>merchantLearningKey(a)===merchantLearningKey(x.name))) return merchantRules[canonical]||null;
+  }
+  return null;
 }
-
 function rememberMerchantCategory(x, category){
   const key=merchantLearningKey(x.name);
   if(!key || !category || category==="Unknown") return;
   merchantRules[key]=category;
   saveMerchantRules();
 }
+function rememberMerchantAlias(canonical, alias){
+  const c=merchantLearningKey(canonical), a=merchantLearningKey(alias);
+  if(!c || !a || c===a) return;
+  if(!merchantAliases[c]) merchantAliases[c]=[];
+  if(!merchantAliases[c].includes(a)) merchantAliases[c].push(a);
+  saveMerchantRules();
+}
+function removeMerchantRule(key){ delete merchantRules[key]; delete merchantAliases[key]; saveMerchantRules(); }
 
 function merchantMasterNormalize(value){
   return norm(String(value||"")).replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
@@ -575,8 +599,63 @@ function render(){
 }
 window.selectMonth=k=>{selectedMonth=k;render()};
 $("search").addEventListener("input",renderTx);
-function renderTx(forceAll=false){const q=$("search").value.toLowerCase();const rows=DATA.filter(x=>((forceAll||selectedMonth==="all")||monthKey(x.date)===selectedMonth)&&(!q||`${x.name} ${x.tid} ${x.date}`.toLowerCase().includes(q))).sort((a,b)=>dateObj(b.date)-dateObj(a.date));$("tbody").innerHTML=rows.slice(0,1000).map(x=>`<tr><td>${escapeHtml(x.date)}</td><td>${escapeHtml(x.time||"—")}</td><td>${escapeHtml(canonical(x.name))}</td><td>${escapeHtml(x.direction)}</td><td class="amount">${money(x.amount)}</td></tr>`).join("")}
+let txSort={key:"date",dir:"desc"};
 
+function amountInRange(amount, range){
+  if(!range) return true;
+  const n=Number(amount||0);
+  if(range==="10000+") return n>=10000;
+  const [a,b]=range.split("-").map(Number);
+  if(a===1) return n>=1 && n<=100;
+  return n>a && n<=b; // avoids double-counting the shared boundary (100 belongs to 1–100).
+}
+function renderTx(forceAll=false){
+  const filters={
+    date:$('filterDate')?.value.toLowerCase().trim()||"",
+    time:$('filterTime')?.value.toLowerCase().trim()||"",
+    name:$('filterName')?.value.toLowerCase().trim()||"",
+    direction:$('filterDirection')?.value||"",
+    amount:$('filterAmount')?.value||""
+  };
+  const q=$("search").value.toLowerCase().trim();
+  let rows=DATA.filter(x=>{
+    if(!((forceAll||selectedMonth==="all")||monthKey(x.date)===selectedMonth)) return false;
+    const allText=`${x.name||""} ${x.tid||""} ${x.date||""} ${x.time||""} ${x.direction||""} ${x.amount||""}`.toLowerCase();
+    if(q && !allText.includes(q)) return false;
+    if(filters.date && !String(x.date||"").toLowerCase().includes(filters.date)) return false;
+    if(filters.time && !String(x.time||"").toLowerCase().includes(filters.time)) return false;
+    if(filters.name && !String(canonical(x.name)||"").toLowerCase().includes(filters.name)) return false;
+    if(filters.direction && x.direction!==filters.direction) return false;
+    if(!amountInRange(x.amount,filters.amount)) return false;
+    return true;
+  });
+  const value=(x,k)=>k==="amount"?Number(x.amount||0):k==="date"?dateObj(x.date).getTime():String(x[k]||"").toLowerCase();
+  rows.sort((a,b)=>{
+    const av=value(a,txSort.key), bv=value(b,txSort.key);
+    if(av<bv) return txSort.dir==="asc"?-1:1;
+    if(av>bv) return txSort.dir==="asc"?1:-1;
+    return 0;
+  });
+  $("tbody").innerHTML=rows.slice(0,2000).map(x=>`<tr><td>${escapeHtml(x.date)}</td><td>${escapeHtml(x.time||"—")}</td><td>${escapeHtml(canonical(x.name))}</td><td>${escapeHtml(x.direction)}</td><td class="amount">${money(x.amount)}</td></tr>`).join("") || `<tr><td colspan="5" class="muted" style="text-align:center;padding:24px">No transactions match the current filters.</td></tr>`;
+  document.querySelectorAll('#txHeader th[data-sort]').forEach(th=>{
+    const mark=th.querySelector('.sortmark');
+    if(mark) mark.textContent=th.dataset.sort===txSort.key?(txSort.dir==='asc'?'▲':'▼'):'';
+  });
+}
+
+document.querySelectorAll('#txHeader th[data-sort]').forEach(th=>th.addEventListener('click',()=>{
+  const key=th.dataset.sort;
+  if(txSort.key===key) txSort.dir=txSort.dir==='asc'?'desc':'asc';
+  else {txSort.key=key;txSort.dir=key==='date'||key==='amount'?'desc':'asc';}
+  renderTx();
+}));
+["filterDate","filterTime","filterName","filterDirection","filterAmount"].forEach(id=>$(id)?.addEventListener('input',renderTx));
+["filterDirection","filterAmount"].forEach(id=>$(id)?.addEventListener('change',renderTx));
+$("search").addEventListener("input",renderTx);
+$("clearTxFilters").onclick=()=>{
+  ["filterDate","filterTime","filterName"].forEach(id=>$(id).value="");
+  $("filterDirection").value=""; $("filterAmount").value=""; $("search").value=""; renderTx();
+};
 
 
 // Pending category review controls.
@@ -593,125 +672,73 @@ $("reviewPendingBtn").onclick=()=>{
 updatePendingCorner();
 
 function renderLearnedMerchants(){
-  const body=$("learnedMerchantsBody");
-  if(!body) return;
-
+  const body=$("learnedMerchantsBody"); if(!body) return;
   const cats=["Food","Medical","Groceries","Essential","Savings","Entertainment","Unknown"];
   const learned=Object.entries(merchantRules||{}).sort((a,b)=>a[0].localeCompare(b[0]));
-
-  // Build a current-upload view showing every merchant and how it was categorized.
   const currentMap=new Map();
   (DATA||[]).forEach(tx=>{
-    const key=merchantLearningKey(tx.name);
-    if(!key) return;
+    const key=merchantLearningKey(tx.name); if(!key)return;
     const category=categories[txKey(tx)] || categorySuggestion(tx) || "Unknown";
-    if(!currentMap.has(key)){
-      currentMap.set(key,{
-        name:String(tx.name||"").trim() || key,
-        category,
-        count:0,
-        amount:0,
-        learned:!!merchantRules[key]
-      });
-    }
-    const row=currentMap.get(key);
-    row.count++;
-    if(tx.direction==="sent") row.amount += Number(tx.amount||0);
+    if(!currentMap.has(key)) currentMap.set(key,{name:String(tx.name||"").trim()||key,category,count:0,amount:0,txs:[]});
+    const row=currentMap.get(key); row.count++; if(tx.direction==="sent")row.amount+=Number(tx.amount||0); row.txs.push(tx);
   });
-
-  const current=[...currentMap.values()].sort((a,b)=>b.amount-a.amount);
-  const rows=learned.map(([merchant,cat])=>{
-    const live=currentMap.get(merchant);
-    return {
-      merchant,
-      display: live ? live.name : merchant,
-      category: cat,
-      count: live ? live.count : 0,
-      amount: live ? live.amount : 0,
-      live: !!live
-    };
-  });
-
-  // Include automatically categorized merchants that have not yet been manually learned.
-  current.forEach(r=>{
-    if(!merchantRules[r.name] && !rows.some(x=>x.merchant===merchantLearningKey(r.name))){
-      rows.push({
-        merchant:merchantLearningKey(r.name),
-        display:r.name,
-        category:r.category,
-        count:r.count,
-        amount:r.amount,
-        live:true,
-        auto:true
-      });
-    }
-  });
-
-  rows.sort((a,b)=>{
-    if(a.auto!==b.auto) return a.auto ? 1 : -1;
-    return b.amount-a.amount;
-  });
-
+  const rows=learned.map(([merchant,cat])=>({merchant,display:(currentMap.get(merchant)||{}).name||merchant,category:cat,count:(currentMap.get(merchant)||{}).count||0,amount:(currentMap.get(merchant)||{}).amount||0,txs:(currentMap.get(merchant)||{}).txs||[],saved:true}));
+  currentMap.forEach((r,key)=>{ if(!merchantRules[key]) rows.push({merchant:key,display:r.name,category:r.category,count:r.count,amount:r.amount,txs:r.txs,saved:false}); });
+  rows.sort((a,b)=>b.amount-a.amount || a.display.localeCompare(b.display));
   body.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0 16px">
-      <div>
-        <b>Merchant categories</b>
-        <div class="muted">Saved categories are remembered for future uploads. Auto categories are shown for the current PDF.</div>
-      </div>
-      <div class="muted">${learned.length} saved</div>
+      <div><b>Merchant categories</b><div class="muted">Edit a category, add aliases, then tap Save. Saved rules are used on future imports in this browser.</div></div>
+      <div class="muted">${learned.length} saved rule${learned.length===1?"":"s"}</div>
     </div>
-
-    ${rows.length ? `
-    <div style="max-height:520px;overflow:auto;border-top:1px solid #edf0f5">
-      ${rows.map(r=>`
-        <div class="learned-row" data-merchant="${encodeURIComponent(r.merchant)}"
-             style="display:flex;align-items:center;gap:10px;border-bottom:1px solid #edf0f5;padding:13px 0;flex-wrap:wrap">
-          <div style="flex:1;min-width:220px">
-            <div style="font-weight:600;word-break:break-word">${escapeHtml(r.display)}</div>
-            <small class="muted">
-              ${r.auto ? "Automatically categorized" : "Saved merchant rule"}
-              ${r.live ? ` · ${r.count} txn${r.count===1?"":"s"} · ₹${Number(r.amount||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}` : ""}
-            </small>
+    <div style="max-height:62vh;overflow:auto;padding-right:4px">
+      ${rows.length?rows.map((r,idx)=>{
+        const aliases=(merchantAliases[r.merchant]||[]).join(", ");
+        return `<div class="learned-row" data-index="${idx}" data-merchant="${encodeURIComponent(r.merchant)}" style="border:1px solid #e4e8f0;border-radius:12px;padding:13px;margin-bottom:10px;background:#fff">
+          <div style="display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+            <div style="flex:1;min-width:220px"><div style="font-weight:700;word-break:break-word">${escapeHtml(r.display)}</div><small class="muted">${r.saved?"Saved rule":"Current upload"} · ${r.count} txn${r.count===1?"":"s"} · ${money(r.amount)}</small></div>
+            <button type="button" class="btn secondary view-merchant-tx">View transactions</button>
           </div>
-
-          <select class="learned-category" style="padding:9px;min-width:145px">
-            ${cats.map(c=>`<option value="${c}" ${c===r.category?"selected":""}>${c}</option>`).join("")}
-          </select>
-
-          <button type="button" class="btn learned-save">${r.auto ? "Save Rule" : "Save"}</button>
-          ${r.auto ? "" : '<button type="button" class="btn secondary learned-delete">Delete</button>'}
-        </div>`).join("")}
-    </div>` : `
-      <div class="muted" style="padding:28px 0;text-align:center">
-        No merchant data yet.<br>
-        Upload a GPay PDF or manually classify an Unknown transaction to build your merchant list.
-      </div>
-    `}
-  `;
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+            <label style="font-size:12px;color:#667085">Category<select class="learned-category" style="display:block;width:100%;margin-top:5px;padding:9px;border:1px solid #d8dee9;border-radius:8px">${cats.map(c=>`<option value="${c}" ${c===r.category?"selected":""}>${c}</option>`).join("")}</select></label>
+            <label style="font-size:12px;color:#667085">Aliases (comma separated)<input class="learned-aliases" value="${escapeHtml(aliases)}" placeholder="e.g. Evara Pharmacy, Evara Medical" style="display:block;width:100%;margin-top:5px;padding:9px;border:1px solid #d8dee9;border-radius:8px"></label>
+          </div>
+          <div class="actions" style="margin-top:10px"><button type="button" class="btn learned-save">${r.saved?"Save changes":"Save rule"}</button>${r.saved?'<button type="button" class="btn secondary learned-delete">Delete</button>':""}</div>
+        </div>`;
+      }).join(""):"<div class=\"muted\" style=\"padding:28px;text-align:center\">No merchant data yet. Upload a GPay statement to build the list.</div>"}
+    </div>`;
 
   body.querySelectorAll(".learned-row").forEach(row=>{
-    const merchant=decodeURIComponent(row.dataset.merchant);
-    const select=row.querySelector(".learned-category");
-    const displayName=row.querySelector("div[style*='font-weight:600']")?.textContent?.trim() || merchant;
-
+    const idx=Number(row.dataset.index), r=rows[idx];
     row.querySelector(".learned-save").onclick=()=>{
-      if(select.value==="Unknown") delete merchantRules[merchant];
-      else merchantRules[merchant]=select.value;
+      const category=row.querySelector(".learned-category").value;
+      const aliases=row.querySelector(".learned-aliases").value.split(",").map(s=>s.trim()).filter(Boolean);
+      const key=r.merchant;
+      if(category==="Unknown") delete merchantRules[key]; else merchantRules[key]=category;
+      merchantAliases[key]=[...new Set(aliases.map(merchantLearningKey).filter(Boolean).filter(a=>a!==key))];
       saveMerchantRules();
-      renderLearnedMerchants();
+      row.querySelector(".learned-save").textContent="Saved ✓";
+      row.style.borderColor="#b7e4c7";
+      setTimeout(()=>{ if(row.querySelector(".learned-save")) row.querySelector(".learned-save").textContent=merchantRules[key]?"Save changes":"Save rule"; },1200);
       render();
     };
-
     const del=row.querySelector(".learned-delete");
-    if(del){
-      del.onclick=()=>{
-        delete merchantRules[merchant];
-        saveMerchantRules();
-        renderLearnedMerchants();
-        render();
-      };
-    }
+    if(del) del.onclick=()=>{ if(confirm(`Delete the saved rule for ${r.display}?`)){ removeMerchantRule(r.merchant); renderLearnedMerchants(); render(); } };
+    row.querySelector(".view-merchant-tx").onclick=()=>openMerchantTransactions(r);
   });
+}
+
+function openMerchantTransactions(r){
+  let modal=$("merchantTxModal");
+  if(!modal){
+    modal=document.createElement("div"); modal.id="merchantTxModal"; modal.className="modal";
+    modal.innerHTML=`<div class="modalbox" style="max-width:760px;max-height:88vh;overflow:hidden;position:relative"><button type="button" id="closeMerchantTxX" style="position:absolute;right:12px;top:8px;border:0;background:transparent;font-size:30px;cursor:pointer">×</button><h2 id="merchantTxTitle" style="padding-right:42px"></h2><div id="merchantTxBody" style="max-height:68vh;overflow:auto;padding-right:5px"></div><div class="actions"><button type="button" class="btn secondary" id="closeMerchantTx">Close</button></div></div>`;
+    document.body.appendChild(modal);
+    $("closeMerchantTx").onclick=()=>modal.style.display="none"; $("closeMerchantTxX").onclick=()=>modal.style.display="none";
+    modal.addEventListener("click",e=>{if(e.target===modal)modal.style.display="none"});
+  }
+  const txs=r.txs||[]; $("merchantTxTitle").textContent=`${r.display} — Transactions`;
+  $("merchantTxBody").innerHTML=txs.length?`<div class="card" style="box-shadow:none;margin:0 0 10px"><b>${txs.length}</b> transactions · <b>${money(r.amount)}</b> sent</div>${txs.map(x=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #edf0f5"><span><b>${escapeHtml(x.name)}</b><br><small class="muted">${escapeHtml(x.date)} · ${escapeHtml(x.time||"—")} · ${escapeHtml(x.direction)}</small></span><b>${money(x.amount)}</b></div>`).join("")}`:`<div class="muted">No transactions in the current upload.</div>`;
+  modal.style.display="flex";
 }
 
 function openLearnedMerchants(){
